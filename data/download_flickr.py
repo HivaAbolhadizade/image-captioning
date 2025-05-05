@@ -76,34 +76,89 @@ def process_captions(dataset_path):
     Returns:
         str: Path to the processed captions CSV file
     """
-    captions_path = os.path.join(dataset_path, "Flickr8k_text", "Flickr8k.token.txt")
-    
+    captions_path = os.path.join(dataset_path, "Flickr8k.token.txt")
+
+    # Check if file exists
+    if not os.path.exists(captions_path):
+        print(f"[ERROR] Captions file not found at {captions_path}")
+        # Try to find the file by searching
+        for root, dirs, files in os.walk(dataset_path):
+            if "Flickr8k.token.txt" in files:
+                captions_path = os.path.join(root, "Flickr8k.token.txt")
+                print(f"[INFO] Found captions file at: {captions_path}")
+                break
+        else:
+            print("[ERROR] Could not find captions file in dataset directory")
+            return None
+
+    print(f"[INFO] Using captions file at: {captions_path}") 
     # ✅TODO: Read the captions file and process it into a structured format
     # 1. Read the captions file line by line
     # 2. Parse each line to extract image_name and caption
     # 3. Remove the #id suffix from image_name
     # 4. Create a list of dictionaries with 'image' and 'caption' keys
     data = []
-    with open(captions_path, 'r') as file:
-        for line in file:
-            image_caption = line.strip().split('\t')
-            image_id = image_caption[0].split('#')[0]
-            caption = image_caption[1]
-            data.append({'image': image_id, 'caption': caption})
+    try:
+        with open(captions_path, 'r', encoding='utf-8') as file:
+            print(f"[DEBUG] Opened file: {captions_path}")
+            first_lines = [next(file) for _ in range(5)]
+            print("[DEBUG] First 5 lines of the file:")
+            for l in first_lines:
+                print(repr(l))
+            file.seek(0)    # Reset the file pointer to start reading
 
-    # Create DataFrame and save to CSV
-    df = pd.DataFrame(data)
+            for i, line in enumerate(file):
+                line = line.strip()
+                if not line:
+                    continue
+
+                # Debugging the first line
+                if i == 0:
+                    print(f"[DEBUG LINE {i}]: {repr(line)}")
+
+                # Split the line by tab, which is the correct delimiter
+                parts = line.split('\t')
+
+                if len(parts) != 2:
+                    print(f"[WARNING] Skipping malformed line: {repr(line)}")
+                    continue
+
+                image_part, caption = parts
+
+                try:
+                    # Split the image name by '#' and take the first part
+                    image_id = image_part.split('#')[0]
+                except Exception as e:
+                    print(f"[ERROR] Failed to split image_part: '{image_part}' — {e}")
+                    continue
+
+                data.append({'image': image_id, 'caption': caption})
+
+        print(f"[DEBUG] Total processed captions: {len(data)}")
+
+        if not data:
+            print("[WARNING] No captions were processed")
+            return None
+
+        # Create DataFrame and show sample
+        df = pd.DataFrame(data)
+        print("[DEBUG] DataFrame preview:")
+        print(df.head()) 
+
+        # Create clean output dir
+        output_dir = os.path.join(dataset_path, "processed")
+        os.makedirs(output_dir, exist_ok=True)
     
-    # Create clean output dir
-    output_dir = os.path.join(dataset_path, "processed")
-    os.makedirs(output_dir, exist_ok=True)
+        # Save to CSV
+        output_path = os.path.join(output_dir, "captions.csv")
+        df.to_csv(output_path, index=False)
     
-    # Save to CSV
-    output_path = os.path.join(output_dir, "captions.csv")
-    df.to_csv(output_path, index=False)
-    
-    print(f"Processed captions saved to {output_path}")
-    return output_path
+        print(f"Processed captions saved to {output_path}")
+        return output_path
+    except Exception as e:
+        print(f"Error processing captions: {str(e)}")
+        return None
+
 
 def organize_images(dataset_path):
     """
@@ -144,7 +199,7 @@ def create_splits(dataset_path):
         dataset_path (str): Path to the dataset directory
     """
     processed_dir = os.path.join(dataset_path, "processed")
-    flickr_text_dir = os.path.join(dataset_path, "Flickr8k_text")
+    flickr_text_dir = os.path.join(dataset_path)
     
     # ✅TODO: Read the split files and create sets of image filenames for each split
     # 1. Read Flickr_8k.trainImages.txt, Flickr_8k.devImages.txt, and Flickr_8k.testImages.txt
