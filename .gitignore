@@ -11,3 +11,6 @@
 
 # ipynd checkpoints
 /notebooks/.ipynb_checkpoints
+
+# Report
+/report
