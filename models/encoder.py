@@ -32,18 +32,44 @@ class EncoderCNN(nn.Module):
         self.model_name = model_name.lower()
         self.embed_size = embed_size
         
-        # TODO: Initialize and configure the CNN backbone based on model_name
+        # ✅TODO: Initialize and configure the CNN backbone based on model_name
         # 1. Create the CNN model using torchvision.models with pretrained weights if specified
         # 2. Store the feature dimension size (before the final classifier)
         # 3. Remove the classifier/fully-connected layer and replace with nn.Identity()
         # Hint: Look at model architectures to find the classifier attribute name and output feature size
-        
-        # TODO: Create a projection layer to transform CNN features to embed_size
+        if self.model_name == 'resnet18':
+            model = models.resnet18(pretrained=pretrained)
+            self.feature_size = model.fc.in_features
+            model.fc = nn.Identity()
+        elif self.model_name == 'resnet50':
+            model = models.resnet50(pretrained=pretrained)
+            self.feature_size = model.fc.in_features
+            model.fc = nn.Identity()
+        elif self.model_name == 'mobilenet_v2':
+            model = models.mobilenet_v2(pretrained=pretrained)
+            self.feature_size = model.classifier[1].in_features
+            model.classifier = nn.Identity()
+        elif self.model_name == 'inception_v3':
+            model = models.inception_v3(pretrained=pretrained, aux_logits=False)
+            self.feature_size = model.fc.in_features
+            model.fc = nn.Identity()
+        else:
+            raise ValueError(f"Unsupported model name: {self.model_name}")
+
+        self.cnn = model
+        # ✅TODO: Create a projection layer to transform CNN features to embed_size
         # The projection should include normalization, activation, and regularization
-        
-        # TODO: Freeze CNN parameters if trainable is False
+        self.projection = nn.Sequential(
+            nn.Linear(self.feature_size, embed_size),
+            nn.BatchNorm1d(embed_size),
+            nn.ReLU(),
+            nn.Dropout(0.3)
+        )
+        # ✅TODO: Freeze CNN parameters if trainable is False
         # This prevents the CNN backbone from being updated during training
-    
+        if not trainable:
+            for param in self.cnn.parameters():
+                param.requires_grad = False
     def forward(self, images):
         """
         Forward pass to extract features from images.
