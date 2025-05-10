@@ -40,10 +40,11 @@ class CaptionModel(nn.Module):
         """
         super(CaptionModel, self).__init__()
         
-        # TODO: Initialize the encoder and decoder components
+        # ✅TODO: Initialize the encoder and decoder components
         # 1. Create an EncoderCNN instance with the specified parameters
         # 2. Create a DecoderRNN instance with the specified parameters
-        
+        self.encoder = EncoderCNN(embed_size, cnn_type=encoder_model, train_cnn=train_encoder)
+        self.decoder = DecoderRNN(embed_size, hidden_size, vocab_size, num_layers, decoder_type=decoder_type, dropout=dropout) 
     def forward(self, images, captions, hidden=None):
         """
         Forward pass for training with teacher forcing.
@@ -58,12 +59,13 @@ class CaptionModel(nn.Module):
                         Shape: [batch_size, seq_length, vocab_size]
             tuple or torch.Tensor: Final hidden state of the RNN
         """
-        outputs = ...
-        # TODO: Implement the forward pass of the full model
+        
+        # ✅TODO: Implement the forward pass of the full model
         # 1. Extract features from images using the encoder
         # 2. Use the decoder to generate captions based on the features and ground truth captions
         # 3. Return the outputs and final hidden state
-        
+        features = self.encoder(images)
+        outputs, hidden = self.decoder(features, captions, hidden)
         return outputs, hidden
     
     def generate_caption(self, image, max_length=20, start_token=1, end_token=2, beam_size=1):
@@ -81,9 +83,50 @@ class CaptionModel(nn.Module):
             torch.Tensor: Generated caption token sequence [1, seq_length]
         """
         sampled_ids = list()
-        # TODO: Implement caption generation for inference
+        # ✅TODO: Implement caption generation for inference
         # 1. Extract features from the image using the encoder (with torch.no_grad())
         # 2. Use the decoder to generate a caption based on the features
         # 3. Return the generated caption
-        
-        return sampled_ids[0]  # Return first (and only) sequence in the batch
+        with torch.no_grad():
+            features = self.encoder(image)
+
+            if beam_size == 1:
+                # Greedy decoding
+                inputs = torch.tensor([[start_token]]).to(image.device)
+                hidden = None
+
+                for _ in range(max_length):
+                    outputs, hidden = self.decoder(features, inputs, hidden)
+                    predicted = outputs[:, -1, :].argmax(dim=-1)  # shape: [1]
+                    sampled_ids.append(predicted.item())
+                    if predicted.item() == end_token:
+                        break
+                    inputs = predicted.unsqueeze(1)  # shape: [1, 1]
+            else:
+                # Beam search
+                sequences = [[[], 0.0, None, torch.tensor([[start_token]]).to(image.device)]]
+                for _ in range(max_length):
+                    all_candidates = []
+                    for seq, score, hidden, inputs in sequences:
+                        outputs, hidden = self.decoder(features, inputs, hidden)
+                        probs = torch.nn.functional.log_softmax(outputs[:, -1, :], dim=-1)  # [1, vocab_size]
+                        topk_probs, topk_indices = probs.topk(beam_size, dim=-1)  # [1, beam_size]
+
+                        for k in range(beam_size):
+                            next_token = topk_indices[0, k].item()
+                            candidate = [seq + [next_token], score + topk_probs[0, k].item(), hidden, next_token]
+                            all_candidates.append(candidate)
+
+                    ordered = sorted(all_candidates, key=lambda tup: tup[1], reverse=True)
+                    sequences = []
+                    for i in range(beam_size):
+                        seq, score, hidden, next_token = ordered[i]
+                        if next_token == end_token:
+                            sampled_ids = seq
+                            return torch.tensor([sampled_ids])
+                        next_input = torch.tensor([[next_token]]).to(image.device)
+                        sequences.append([seq, score, hidden, next_input])
+
+            sampled_ids = sequences[0][0]  # Best sequence
+
+        return torch.tensor([sampled_ids])  # Return first (and only) sequence in the batch

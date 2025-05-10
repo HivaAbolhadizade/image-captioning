@@ -36,17 +36,22 @@ class DecoderRNN(nn.Module):
         self.num_layers = num_layers
         self.rnn_type = rnn_type.lower()
         
-        # TODO: Create the word embedding layer to convert word indices to vectors
-        
-        # TODO: Create the RNN layer (LSTM or GRU) based on rnn_type
+        # ✅TODO: Create the word embedding layer to convert word indices to vectors
+        self.embedding = nn.Embedding(vocab_size, embed_size)
+        # ✅TODO: Create the RNN layer (LSTM or GRU) based on rnn_type
         # 1. Check the rnn_type ('lstm' or 'gru')
         # 2. Create the appropriate RNN layer with the specified parameters
         # 3. Handle the case of an unsupported RNN type
-        
-        # TODO: Create the output projection layer from hidden_size to vocab_size
-        
-        # TODO: Create a dropout layer with the specified dropout probability
-        
+        if self.rnn_type == 'lstm':
+            self.rnn = nn.LSTM(embed_size, hidden_size, num_layers, batch_first=True)
+        elif self.rnn_type == 'gru':
+            self.rnn = nn.GRU(embed_size, hidden_size, num_layers, batch_first=True)
+        else:
+            raise ValueError("Unsupported RNN type: {}".format(rnn_type))
+        # ✅TODO: Create the output projection layer from hidden_size to vocab_size
+        self.fc = nn.Linear(hidden_size, vocab_size)
+        # ✅TODO: Create a dropout layer with the specified dropout probability
+        self.dropout = nn.Dropout(dropout)
     def forward(self, features, captions, hidden=None):
         """
         Forward pass for training with teacher forcing.
@@ -62,14 +67,27 @@ class DecoderRNN(nn.Module):
             tuple or torch.Tensor: Final hidden state of the RNN
         """
         outputs = ...
-        # TODO: Implement the forward pass with teacher forcing
+        # ✅TODO: Implement the forward pass with teacher forcing
         # 1. Embed the input captions
         # 2. Prepare image features (add sequence dimension)
         # 3. Concatenate image features with embedded captions
         # 4. Run the RNN on the combined inputs
         # 5. Apply dropout to the RNN outputs
         # 6. Project the outputs to vocabulary size
+
+        # Embed the captions
+        embeddings = self.embedding(captions)
         
+        # Concatenate image features with embedded captions
+        features = features.unsqueeze(1)
+        inputs = torch.cat((features, embeddings), dim=1)
+        
+        # Run the RNN
+        outputs, hidden = self.rnn(inputs, hidden)
+        
+        # Apply dropout and project to vocabulary size
+        outputs = self.dropout(outputs)
+        outputs = self.fc(outputs)
         return outputs, hidden
     
     def sample(self, features, max_length=20, start_token=1, end_token=2, temperature=1.0, beam_size=1):
@@ -104,7 +122,7 @@ class DecoderRNN(nn.Module):
         device = features.device
         
         sampled_ids = ...
-        # TODO: Implement greedy sampling for caption generation
+        # ✅TODO: Implement greedy sampling for caption generation
         # 1. Initialize inputs with start token
         # 2. Initialize hidden state (may need to handle LSTM and GRU differently)
         # 3. Create a list to store sampled token indices
@@ -117,7 +135,43 @@ class DecoderRNN(nn.Module):
         #    f. Update input for next step
         #    g. Break if all sequences generated end token
         # 5. Stack sampled indices into a tensor
+
+
+         # Initialize with start token
+        inputs = torch.LongTensor([start_token] * batch_size).to(device)
+        sampled_ids = []
         
+        # Initialize hidden state
+        if self.rnn_type == 'lstm':
+            h0 = features.unsqueeze(0).repeat(self.num_layers, 1, 1)
+            c0 = torch.zeros_like(h0)
+            hidden = (h0, c0)
+        else:
+            hidden = features.unsqueeze(0).repeat(self.num_layers, 1, 1)
+        
+        for _ in range(max_length):
+            # Embed the inputs
+            embeddings = self.embedding(inputs).unsqueeze(1)
+            
+            # Run RNN
+            outputs, hidden = self.rnn(embeddings, hidden)
+            
+            # Project to vocabulary
+            outputs = self.fc(outputs.squeeze(1))
+            outputs = outputs / temperature
+            
+            # Get the most likely next word
+            predicted = outputs.argmax(1)
+            sampled_ids.append(predicted)
+            
+            # Update inputs for next iteration
+            inputs = predicted
+            
+            # Stop if all sequences have ended
+            if (inputs == end_token).all():
+                break
+                
+        sampled_ids = torch.stack(sampled_ids, 1)
         return sampled_ids
     
     def _beam_search(self, features, max_length, start_token, end_token, beam_size):

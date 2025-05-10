@@ -6,19 +6,20 @@ Vocabulary processing for image captioning.
 This module handles building and managing the vocabulary for caption text.
 """
 
-import nltk
-from collections import Counter
-import pandas as pd
-from tqdm import tqdm
+import re
 import os
 import pickle
 import string
-import re
+import pandas as pd
+from collections import Counter
+from tqdm import tqdm
 
 class Vocabulary:
     """
     Vocabulary class for processing and tokenizing caption text.
     Handles word-to-index and index-to-word mappings.
+    
+    Uses a simple tokenizer to avoid NLTK dependencies.
     """
     
     def __init__(self, freq_threshold=5, max_size=None):
@@ -55,12 +56,6 @@ class Vocabulary:
         # Set frequency threshold and maximum size
         self.freq_threshold = freq_threshold
         self.max_size = max_size
-        
-        # Try to ensure NLTK's tokenizer is downloaded
-        try:
-            nltk.data.find('tokenizers/punkt')
-        except LookupError:
-            nltk.download('punkt', quiet=True)
     
     def __len__(self):
         """Return the size of the vocabulary"""
@@ -69,6 +64,7 @@ class Vocabulary:
     def tokenize(self, text):
         """
         Tokenize a caption text into a list of tokens.
+        Uses a simple space-based tokenizer instead of NLTK to avoid dependencies.
         
         Args:
             text (str): Caption text to tokenize
@@ -76,14 +72,20 @@ class Vocabulary:
         Returns:
             list: List of tokens
         """
+        if pd.isna(text):
+            return []
+            
         # Convert to lowercase
-        text = text.lower()
+        text = str(text).lower()
         
         # Remove punctuation
-        text = re.sub(f'[{re.escape(string.punctuation)}]', '', text)
+        text = re.sub(f'[{re.escape(string.punctuation)}]', ' ', text)
+        
+        # Replace multiple spaces with a single space
+        text = re.sub(r'\s+', ' ', text).strip()
         
         # Split into tokens
-        tokens = nltk.word_tokenize(text)
+        tokens = text.split()
         
         # Filter out tokens with length <= 1
         tokens = [token for token in tokens if len(token) > 1]
@@ -100,13 +102,41 @@ class Vocabulary:
         Returns:
             self: The vocabulary object
         """
-        # TODO: Build vocabulary from captions
-        # 1. Initialize a Counter to count word frequencies across all captions
-        # 2. Tokenize each caption and update the counter with tokens
-        # 3. Sort words by frequency (most frequent first)
-        # 4. Filter words based on frequency threshold and max_size
-        # 5. Add each filtered word to the vocabulary (word2idx and idx2word)
+        # Initialize a Counter to count word frequencies across all captions
+        word_freq = Counter()
+
+        # Process captions in batches to improve performance
+        batch_size = 1000
+        num_captions = len(caption_series)
         
+        # Process in batches with a progress bar
+        for i in tqdm(range(0, num_captions, batch_size), desc="Building vocabulary"):
+            batch = caption_series.iloc[i:min(i+batch_size, num_captions)]
+            
+            # Tokenize each caption and update the counter with tokens
+            for caption in batch:
+                tokens = self.tokenize(caption)
+                word_freq.update(tokens)
+
+        # Sort words by frequency (most frequent first)
+        sorted_words = sorted(word_freq.items(), key=lambda x: x[1], reverse=True)
+
+        # Filter words based on frequency threshold
+        filtered_words = [
+            word for word, freq in sorted_words
+            if freq >= self.freq_threshold
+        ]
+        
+        # Apply max_size if specified
+        if self.max_size:
+            filtered_words = filtered_words[:self.max_size]
+
+        # Add each filtered word to the vocabulary
+        for word in filtered_words:
+            self.word2idx[word] = self.idx
+            self.idx2word[self.idx] = word
+            self.idx += 1
+
         return self
     
     def numericalize(self, text, add_special_tokens=True):
@@ -120,15 +150,22 @@ class Vocabulary:
         Returns:
             list: List of token indices
         """
-        indices = list()
-        # TODO: Convert a text string to a sequence of token indices
-        # 1. Tokenize the input text
-        # 2. Convert each token to its corresponding index (use UNK token for unknown words)
-        # 3. Add start and end tokens if requested
-        # 4. Return the list of indices
+        indices = []
         
+        # Tokenize the input text
+        tokens = self.tokenize(text)
+
+        # Convert each token to its corresponding index (use UNK token for unknown words)
+        for token in tokens:
+            index = self.word2idx.get(token, self.word2idx[self.unk_token])
+            indices.append(index)
+
+        # Add start and end tokens if requested
+        if add_special_tokens:
+            indices = [self.word2idx[self.start_token]] + indices + [self.word2idx[self.end_token]]
+
         return indices
-        
+    
     def decode(self, indices, join=True, remove_special=True):
         """
         Convert a list of indices back to a caption text.
@@ -198,6 +235,7 @@ def build_vocab_from_captions(captions_path, output_dir, freq_threshold=5, max_s
         Vocabulary: The built vocabulary
     """
     # Load captions
+    print(f"Loading captions from {captions_path}")
     captions_df = pd.read_csv(captions_path)
     
     # Create output directory if it doesn't exist
@@ -207,6 +245,7 @@ def build_vocab_from_captions(captions_path, output_dir, freq_threshold=5, max_s
     vocab = Vocabulary(freq_threshold=freq_threshold, max_size=max_size)
     
     # Build vocabulary
+    print(f"Building vocabulary from {len(captions_df)} captions")
     vocab.build_vocabulary(captions_df['caption'])
     
     # Save vocabulary
@@ -217,3 +256,25 @@ def build_vocab_from_captions(captions_path, output_dir, freq_threshold=5, max_s
     print(f"Saved to {vocab_path}")
     
     return vocab
+
+
+if __name__ == "__main__":
+    # Example usage
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Build vocabulary from captions')
+    parser.add_argument('--captions_path', type=str, required=True, help='Path to captions CSV file')
+    parser.add_argument('--output_dir', type=str, required=True, help='Output directory for vocabulary')
+    parser.add_argument('--freq_threshold', type=int, default=5, help='Minimum word frequency')
+    parser.add_argument('--max_size', type=int, default=None, help='Maximum vocabulary size')
+    
+    args = parser.parse_args()
+    
+    vocab = build_vocab_from_captions(
+        args.captions_path, 
+        args.output_dir,
+        freq_threshold=args.freq_threshold,
+        max_size=args.max_size
+    )
+    
+    print(f"Built vocabulary with {len(vocab)} words")
