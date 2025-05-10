@@ -93,7 +93,7 @@ class CaptionTrainer:
         batch_losses = []
         progress_bar = tqdm(enumerate(self.train_loader), total=len(self.train_loader), desc=f"Epoch {self.current_epoch+1}")
         
-        # TODO: Implement the training loop for one epoch
+        # ✅TODO: Implement the training loop for one epoch
         # 1. Iterate through batches in the training data loader
         # 2. Move data (images and captions) to the device
         # 3. Zero gradients
@@ -103,7 +103,46 @@ class CaptionTrainer:
         # 7. Apply gradient clipping to prevent exploding gradients
         # 8. Update metrics and progress bar
         # 9. Log at specified intervals
-        
+        #--------------------------------------------------
+        # 1. Iterate through batches in the training data loader
+        for batch_idx, (images, captions) in progress_bar:
+            # 2. Move data (images and captions) to the device
+            images = images.to(self.device)
+            captions = captions.to(self.device)
+            
+            # 3. Zero gradients
+            self.optimizer.zero_grad()
+            
+            # 4. Forward pass through the model
+            outputs = self.model(images, captions[:, :-1])  # Exclude last token
+            
+            # 5. Calculate loss (reshape outputs and targets as needed)
+            # Reshape outputs to (batch_size * seq_len, vocab_size)
+            outputs = outputs.view(-1, outputs.size(2))
+            # Reshape targets to (batch_size * seq_len)
+            targets = captions[:, 1:].contiguous().view(-1)  # Exclude first token
+            
+            loss = self.criterion(outputs, targets)
+            
+            # 6. Backward pass and optimize
+            loss.backward()
+            
+            # 7. Apply gradient clipping to prevent exploding gradients
+            nn.utils.clip_grad_norm_(self.model.parameters(), 5.0)
+            
+            self.optimizer.step()
+            
+            # 8. Update metrics and progress bar
+            batch_loss = loss.item()
+            epoch_loss += batch_loss
+            batch_losses.append(batch_loss)
+            
+            # 9. Log at specified intervals
+            if batch_idx % self.log_interval == 0:
+                progress_bar.set_postfix({
+                    'batch_loss': f"{batch_loss:.4f}",
+                    'avg_loss': f"{epoch_loss/(batch_idx+1):.4f}"
+                })
         # Calculate average epoch loss
         avg_loss = epoch_loss / len(self.train_loader)
         tqdm.write(f"Epoch {self.current_epoch+1} - Train Loss: {avg_loss:.4f}")
@@ -126,13 +165,37 @@ class CaptionTrainer:
         # Metrics for caption generation (if enabled)
         bleu_score = 0.0
         
-        # TODO: Implement validation loop
+        # ✅TODO: Implement validation loop
         # 1. Iterate through validation data loader with torch.no_grad()
         # 2. Move data to device
         # 3. Forward pass
         # 4. Calculate and accumulate validation loss
         # 5. If generate_captions is True, calculate BLEU score
-        
+        #-----------------------------------------------------
+         # 1. Iterate through validation data loader with torch.no_grad()
+        with torch.no_grad():
+            for images, captions in tqdm(self.val_loader, desc="Validating"):
+                # 2. Move data to device
+                images = images.to(self.device)
+                captions = captions.to(self.device)
+                
+                # 3. Forward pass
+                outputs = self.model(images, captions[:, :-1])
+                
+                # 4. Calculate and accumulate validation loss
+                outputs = outputs.view(-1, outputs.size(2))
+                targets = captions[:, 1:].contiguous().view(-1)
+                loss = self.criterion(outputs, targets)
+                val_loss += loss.item()
+                
+                # 5. If generate_captions is True, calculate BLEU score
+                if generate_captions:
+                    bleu_score += calculate_metrics(
+                        self.model,
+                        [(images, captions)],  # Wrap in list to process as batch
+                        self.vocab,
+                        self.device
+                    )
         # Calculate average validation loss
         avg_val_loss = val_loss / len(self.val_loader)
         tqdm.write(f"Epoch {self.current_epoch+1} - Val Loss: {avg_val_loss:.4f}" + 
