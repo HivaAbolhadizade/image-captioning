@@ -69,7 +69,7 @@ class FlickrDataset(Dataset):
         """
         image = ...
         caption = ...
-        # TODO: Implement the data loading logic
+        # ✅TODO: Implement the data loading logic
         # 1. Get caption text and image filename from DataFrame at the given index
         # 2. Load the image from disk
         # 3. Apply transformations to the image
@@ -77,7 +77,32 @@ class FlickrDataset(Dataset):
         # 5. Pad or truncate caption to max_length
         # 6. Convert caption to a tensor
         # 7. Return the processed image and caption
+        #---------------------------------------------------------------------------
+        # 1. Get caption text and image filename from DataFrame at the given index
+        caption_text = str(self.df.iloc[idx]['caption'])
+        image_name = self.df.iloc[idx]['image']
         
+        # 2. Load the image from disk
+        image_path = os.path.join(self.images_dir, image_name)
+        image = Image.open(image_path).convert('RGB')
+        
+        # 3. Apply transformations to the image
+        image = self.transform(image)
+        
+        # 4. Process the caption text: convert to token indices using vocabulary
+        caption_indices = [self.vocab(self.vocab.start_token)]
+        caption_indices.extend(self.vocab.tokenize(caption_text))
+        caption_indices.append(self.vocab(self.vocab.end_token))
+        
+        # 5. Pad or truncate caption to max_length
+        if len(caption_indices) > self.max_length:
+            caption_indices = caption_indices[:self.max_length]
+            caption_indices[-1] = self.vocab(self.vocab.end_token)  # Ensure last token is end token
+        else:
+            caption_indices += [self.vocab(self.vocab.pad_token)] * (self.max_length - len(caption_indices))
+        
+        # 6. Convert caption to a tensor
+        caption = torch.tensor(caption_indices, dtype=torch.long)
         return image, caption
 
 
