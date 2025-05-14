@@ -43,7 +43,12 @@ class CaptionModel(nn.Module):
         # ✅TODO: Initialize the encoder and decoder components
         # 1. Create an EncoderCNN instance with the specified parameters
         # 2. Create a DecoderRNN instance with the specified parameters
-        self.encoder = EncoderCNN(embed_size, cnn_type=encoder_model, train_cnn=train_encoder)
+        self.encoder = EncoderCNN(
+            model_name=encoder_model,        # e.g., 'resnet18', 'resnet50', etc.
+            embed_size=embed_size,
+            pretrained=True,
+            trainable=train_encoder)
+
         self.decoder = DecoderRNN(embed_size, hidden_size, vocab_size, num_layers, decoder_type=decoder_type, dropout=dropout) 
     def forward(self, images, captions, hidden=None):
         """

@@ -121,7 +121,6 @@ class DecoderRNN(nn.Module):
         batch_size = features.size(0)
         device = features.device
         
-        sampled_ids = ...
         # ✅TODO: Implement greedy sampling for caption generation
         # 1. Initialize inputs with start token
         # 2. Initialize hidden state (may need to handle LSTM and GRU differently)
