@@ -49,7 +49,7 @@ class CaptionModel(nn.Module):
             pretrained=True,
             trainable=train_encoder)
 
-        self.decoder = DecoderRNN(embed_size, hidden_size, vocab_size, num_layers, decoder_type=decoder_type, dropout=dropout) 
+        self.decoder = DecoderRNN(embed_size=embed_size, hidden_size=hidden_size, vocab_size=vocab_size, num_layers=num_layers, rnn_type='lstm', dropout=0.5) 
     def forward(self, images, captions, hidden=None):
         """
         Forward pass for training with teacher forcing.
