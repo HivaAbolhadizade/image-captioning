@@ -13,6 +13,8 @@ import string
 import pandas as pd
 from collections import Counter
 from tqdm import tqdm
+import torch
+import numpy as np  # (if you use np.integer or np.ndarray anywhere)
 
 class Vocabulary:
     """
@@ -166,34 +168,22 @@ class Vocabulary:
 
         return indices
     
-    def decode(self, indices, join=True, remove_special=True):
-        """
-        Convert a list of indices back to a caption text.
-        
-        Args:
-            indices (list or torch.Tensor): List of token indices
-            join (bool): Whether to join tokens into a string
-            remove_special (bool): Whether to remove special tokens
-            
-        Returns:
-            str or list: Caption text or list of tokens
-        """
-        # Convert tensor to list if needed
-        if not isinstance(indices, list):
+    def decode(self, indices, join=False, remove_special=False):
+        # Convert to list if tensor
+        if isinstance(indices, torch.Tensor):
+            indices = indices.cpu().numpy().tolist()
+        # If it's a numpy array
+        if isinstance(indices, np.ndarray):
             indices = indices.tolist()
-        
-        # Convert indices to words
+        # If it's a single int, wrap in list
+        if isinstance(indices, (int, np.integer)):
+            indices = [indices]
+        # Now indices is a list
         tokens = [self.idx2word.get(idx, self.unk_token) for idx in indices]
-        
-        # Remove special tokens if requested
         if remove_special:
-            tokens = [token for token in tokens 
-                     if token not in [self.pad_token, self.start_token, self.end_token]]
-        
-        # Join tokens if requested
+            tokens = [t for t in tokens if t not in {self.pad_token, self.start_token, self.end_token}]
         if join:
-            return " ".join(tokens)
-        
+            return ' '.join(tokens)
         return tokens
     
     def save(self, path):

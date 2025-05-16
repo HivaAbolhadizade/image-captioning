@@ -50,7 +50,43 @@ class FlickrDataset(Dataset):
             ])
         else:
             self.transform = transform
-    
+        
+        # Determine the word-to-index method in the vocab object
+        if hasattr(self.vocab, 'word_to_idx'):
+            self.word_dict = self.vocab.word_to_idx
+        elif hasattr(self.vocab, 'word2idx'):
+            self.word_dict = self.vocab.word2idx
+        elif hasattr(self.vocab, 'stoi'):
+            self.word_dict = self.vocab.stoi
+        elif hasattr(self.vocab, 'token_to_id'):
+            self.word_dict = self.vocab.token_to_id
+        elif hasattr(self.vocab, 'get_idx'):
+            self.word_to_idx_func = self.vocab.get_idx
+            return
+        elif hasattr(self.vocab, 'get_index'):
+            self.word_to_idx_func = self.vocab.get_index
+            return
+        elif hasattr(self.vocab, '__call__'):
+            # If the vocab object is callable, use it directly
+            self.word_to_idx_func = self.vocab
+            return
+        else:
+            # Try to find any method that might be intended for word-to-index conversion
+            word_to_idx_candidates = [attr for attr in dir(self.vocab) if 'idx' in attr.lower() or 'index' in attr.lower() or 'id' in attr.lower()]
+            if word_to_idx_candidates:
+                self.word_to_idx_func = getattr(self.vocab, word_to_idx_candidates[0])
+                return
+            else:
+                raise AttributeError(f"Could not find a word-to-index method in the Vocabulary class. "
+                                     f"Please verify the Vocabulary implementation or provide a method name.")
+        
+        # If we're using a dictionary, create a method for word-to-index conversion
+        self.word_to_idx_func = self._get_word_idx
+
+    def _get_word_idx(self, word):
+        """Helper method to get word index from dictionary."""
+        return self.word_dict.get(word, self.word_dict[self.vocab.unk_token])
+
     def __len__(self):
         """Return the number of samples in the dataset"""
         return len(self.df)
@@ -67,17 +103,6 @@ class FlickrDataset(Dataset):
                 image (torch.Tensor): Preprocessed image tensor
                 caption (torch.Tensor): Caption token indices
         """
-        image = ...
-        caption = ...
-        # ✅TODO: Implement the data loading logic
-        # 1. Get caption text and image filename from DataFrame at the given index
-        # 2. Load the image from disk
-        # 3. Apply transformations to the image
-        # 4. Process the caption text: convert to token indices using vocabulary
-        # 5. Pad or truncate caption to max_length
-        # 6. Convert caption to a tensor
-        # 7. Return the processed image and caption
-        #---------------------------------------------------------------------------
         # 1. Get caption text and image filename from DataFrame at the given index
         caption_text = str(self.df.iloc[idx]['caption'])
         image_name = self.df.iloc[idx]['image']
@@ -90,16 +115,20 @@ class FlickrDataset(Dataset):
         image = self.transform(image)
         
         # 4. Process the caption text: convert to token indices using vocabulary
-        caption_indices = [self.vocab(self.vocab.start_token)]
-        caption_indices.extend(self.vocab.tokenize(caption_text))
-        caption_indices.append(self.vocab(self.vocab.end_token))
+        # First tokenize the text
+        tokens = self.vocab.tokenize(caption_text)
+        
+        # Convert tokens to indices
+        caption_indices = [self.word_to_idx_func(self.vocab.start_token)]
+        caption_indices.extend([self.word_to_idx_func(token) for token in tokens])
+        caption_indices.append(self.word_to_idx_func(self.vocab.end_token))
         
         # 5. Pad or truncate caption to max_length
         if len(caption_indices) > self.max_length:
             caption_indices = caption_indices[:self.max_length]
-            caption_indices[-1] = self.vocab(self.vocab.end_token)  # Ensure last token is end token
+            caption_indices[-1] = self.word_to_idx_func(self.vocab.end_token)  # Ensure last token is end token
         else:
-            caption_indices += [self.vocab(self.vocab.pad_token)] * (self.max_length - len(caption_indices))
+            caption_indices += [self.word_to_idx_func(self.vocab.pad_token)] * (self.max_length - len(caption_indices))
         
         # 6. Convert caption to a tensor
         caption = torch.tensor(caption_indices, dtype=torch.long)
@@ -178,8 +207,8 @@ def get_data_loaders(data_dir, batch_size=32, shuffle=True, num_workers=4, pin_m
     ])
     
     # Create datasets
-    train_dataset = FlickrDataset(images_dir, train_captions, vocab, transform=train_transform)
-    val_dataset = FlickrDataset(images_dir, val_captions, vocab, transform=val_transform)
+    train_dataset = FlickrDatasetWithID(images_dir, train_captions, vocab, transform=train_transform)
+    val_dataset = FlickrDatasetWithID(images_dir, val_captions, vocab, transform=val_transform)
     test_dataset = FlickrDatasetWithID(images_dir, test_captions, vocab, transform=val_transform)
     
     # Create data loaders

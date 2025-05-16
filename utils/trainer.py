@@ -105,7 +105,7 @@ class CaptionTrainer:
         # 9. Log at specified intervals
         #--------------------------------------------------
         # 1. Iterate through batches in the training data loader
-        for batch_idx, (images, captions) in progress_bar:
+        for batch_idx, (images, captions, image_ids) in progress_bar:
             # 2. Move data (images and captions) to the device
             images = images.to(self.device)
             captions = captions.to(self.device)
@@ -114,13 +114,24 @@ class CaptionTrainer:
             self.optimizer.zero_grad()
             
             # 4. Forward pass through the model
-            outputs = self.model(images, captions[:, :-1])  # Exclude last token
+            outputs, _ = self.model(images, captions[:, :-1])  # Exclude last token
             
             # 5. Calculate loss (reshape outputs and targets as needed)
+            # Get dimensions
+            batch_size = outputs.size(0)
+            seq_length = outputs.size(1)
+            vocab_size = outputs.size(2)
+            
             # Reshape outputs to (batch_size * seq_len, vocab_size)
-            outputs = outputs.view(-1, outputs.size(2))
+            outputs = outputs.contiguous().view(-1, vocab_size)
+            
             # Reshape targets to (batch_size * seq_len)
             targets = captions[:, 1:].contiguous().view(-1)  # Exclude first token
+            
+            # Ensure both tensors have the same length
+            min_length = min(outputs.size(0), targets.size(0))
+            outputs = outputs[:min_length]
+            targets = targets[:min_length]
             
             loss = self.criterion(outputs, targets)
             
@@ -154,52 +165,61 @@ class CaptionTrainer:
         Validate the model on the validation set.
         
         Args:
-            generate_captions (bool): Whether to generate and evaluate captions
+            generate_captions (bool): Whether to generate captions and calculate BLEU score
             
         Returns:
-            tuple: (val_loss, bleu_score)
+            tuple: (average validation loss, BLEU score)
         """
         self.model.eval()
-        val_loss = 0.0
+        val_loss = 0
+        bleu_score = 0
         
-        # Metrics for caption generation (if enabled)
-        bleu_score = 0.0
-        
-        # ✅TODO: Implement validation loop
-        # 1. Iterate through validation data loader with torch.no_grad()
-        # 2. Move data to device
-        # 3. Forward pass
-        # 4. Calculate and accumulate validation loss
-        # 5. If generate_captions is True, calculate BLEU score
-        #-----------------------------------------------------
-         # 1. Iterate through validation data loader with torch.no_grad()
         with torch.no_grad():
-            for images, captions in tqdm(self.val_loader, desc="Validating"):
-                # 2. Move data to device
+            for images, captions , id in tqdm(self.val_loader, desc="Validating"):
+                # Move data to device
                 images = images.to(self.device)
                 captions = captions.to(self.device)
                 
-                # 3. Forward pass
-                outputs = self.model(images, captions[:, :-1])
+                # Forward pass
+                outputs, _ = self.model(images, captions[:, :-1])  # Exclude last token
                 
-                # 4. Calculate and accumulate validation loss
-                outputs = outputs.view(-1, outputs.size(2))
-                targets = captions[:, 1:].contiguous().view(-1)
+                # Reshape outputs and targets for loss calculation
+                batch_size = outputs.size(0)
+                seq_length = outputs.size(1)
+                vocab_size = outputs.size(2)
+                
+                # Reshape outputs to (batch_size * seq_len, vocab_size)
+                outputs = outputs.contiguous().view(batch_size * seq_length, vocab_size)
+                
+                # Reshape targets to (batch_size * seq_len)
+                targets = captions[:, 1:].contiguous().view(-1)  # Exclude first token
+                
+                # Ensure both tensors have the same length
+                min_length = min(outputs.size(0), targets.size(0))
+                outputs = outputs[:min_length]
+                targets = targets[:min_length]
+                
+                # Calculate loss
                 loss = self.criterion(outputs, targets)
                 val_loss += loss.item()
                 
-                # 5. If generate_captions is True, calculate BLEU score
+                # Generate captions and calculate BLEU score if requested
                 if generate_captions:
+                    # Create a list of (image, caption) pairs for metrics calculation
+                    metric_data = [(img, cap , img_id) for img, cap, img_id in zip(images, captions, id)]
                     bleu_score += calculate_metrics(
                         self.model,
-                        [(images, captions)],  # Wrap in list to process as batch
+                        metric_data,  # Pass list of (image, caption) pairs
                         self.vocab,
                         self.device
                     )
+        
         # Calculate average validation loss
         avg_val_loss = val_loss / len(self.val_loader)
-        tqdm.write(f"Epoch {self.current_epoch+1} - Val Loss: {avg_val_loss:.4f}" + 
-                (f", BLEU-4: {bleu_score:.4f}" if generate_captions else ""))
+        
+        # Calculate average BLEU score if captions were generated
+        if generate_captions:
+            bleu_score = bleu_score / len(self.val_loader)
         
         return avg_val_loss, bleu_score
     
@@ -355,7 +375,7 @@ class CaptionTrainer:
             print(f"Checkpoint not found at {checkpoint_path}")
             return self
         
-        checkpoint = torch.load(checkpoint_path, map_location=self.device)
+        checkpoint = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
         
         # Load model state
         self.model.load_state_dict(checkpoint['model_state_dict'])

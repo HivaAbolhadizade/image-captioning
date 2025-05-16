@@ -16,7 +16,7 @@ class DecoderRNN(nn.Module):
     Uses LSTM/GRU with word embeddings to generate captions word by word.
     """
     
-    def __init__(self, embed_size, hidden_size, vocab_size, num_layers=1, rnn_type='lstm', dropout=0.5):
+    def __init__(self, embed_size, hidden_size, vocab_size, num_layers=1, rnn_type='lstm', dropout=0.5, embedding_matrix=None):
         """
         Initialize the decoder.
         
@@ -27,6 +27,7 @@ class DecoderRNN(nn.Module):
             num_layers (int): Number of layers in the RNN
             rnn_type (str): Type of RNN cell ('lstm' or 'gru')
             dropout (float): Dropout probability
+            embedding_matrix (torch.Tensor, optional): Pre-trained word embeddings matrix
         """
         super(DecoderRNN, self).__init__()
         
@@ -37,7 +38,10 @@ class DecoderRNN(nn.Module):
         self.rnn_type = rnn_type.lower()
         
         # ✅TODO: Create the word embedding layer to convert word indices to vectors
-        self.embedding = nn.Embedding(vocab_size, embed_size)
+        if embedding_matrix is not None:
+            self.embedding = nn.Embedding.from_pretrained(embedding_matrix, freeze=False)
+        else:
+            self.embedding = nn.Embedding(vocab_size, embed_size)
         # ✅TODO: Create the RNN layer (LSTM or GRU) based on rnn_type
         # 1. Check the rnn_type ('lstm' or 'gru')
         # 2. Create the appropriate RNN layer with the specified parameters
@@ -52,6 +56,8 @@ class DecoderRNN(nn.Module):
         self.fc = nn.Linear(hidden_size, vocab_size)
         # ✅TODO: Create a dropout layer with the specified dropout probability
         self.dropout = nn.Dropout(dropout)
+
+        self.toHidden = nn.Linear(embed_size, hidden_size)
     def forward(self, features, captions, hidden=None):
         """
         Forward pass for training with teacher forcing.
@@ -79,11 +85,15 @@ class DecoderRNN(nn.Module):
         embeddings = self.embedding(captions)
         
         # Concatenate image features with embedded captions
-        features = features.unsqueeze(1)
-        inputs = torch.cat((features, embeddings), dim=1)
+        h0 = self.toHidden(features).unsqueeze(0).repeat(self.num_layers, 1, 1)  # [num_layers, B, H]
+        if self.rnn_type == 'lstm':
+            c0 = torch.zeros_like(h0)
+            hidden = (h0, c0)
+        else:
+            hidden = h0
         
         # Run the RNN
-        outputs, hidden = self.rnn(inputs, hidden)
+        outputs, hidden = self.rnn(embeddings, hidden)
         
         # Apply dropout and project to vocabulary size
         outputs = self.dropout(outputs)
@@ -142,11 +152,11 @@ class DecoderRNN(nn.Module):
         
         # Initialize hidden state
         if self.rnn_type == 'lstm':
-            h0 = features.unsqueeze(0).repeat(self.num_layers, 1, 1)
+            h0 = self.toHidden(features).unsqueeze(0).repeat(self.num_layers, 1, 1)
             c0 = torch.zeros_like(h0)
             hidden = (h0, c0)
         else:
-            hidden = features.unsqueeze(0).repeat(self.num_layers, 1, 1)
+            hidden = self.toHidden(features).unsqueeze(0).repeat(self.num_layers, 1, 1)
         
         for _ in range(max_length):
             # Embed the inputs
@@ -192,12 +202,12 @@ class DecoderRNN(nn.Module):
         # For the first step, use image features as initial hidden state
         if self.rnn_type == 'lstm':
             # For LSTM, we need to initialize (h0, c0)
-            h0 = features.unsqueeze(0).repeat(self.num_layers, 1, 1)
+            h0 = self.toHidden(features).unsqueeze(0).repeat(self.num_layers, 1, 1)
             c0 = torch.zeros_like(h0)
             hidden_init = (h0, c0)
         else:
             # For GRU, we just need to initialize h0
-            hidden_init = features.unsqueeze(0).repeat(self.num_layers, 1, 1)
+            hidden_init = self.toHidden(features).unsqueeze(0).repeat(self.num_layers, 1, 1)
         
         # Run beam search
         for _ in range(max_length):
