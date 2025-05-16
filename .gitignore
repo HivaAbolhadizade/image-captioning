@@ -17,3 +17,27 @@
 
 # glove embedding
 /models/glove.6B.100d.txt
+/models/final_model.pth
+/models/vocab.pkl
+/models/tokenizer.pkl
+/models/best_model_beam.pth
+/models/best_model_greedy.pth
+/models/model_weights.pth
+/models/best_model_beam_10.pth
+/models/best_model_greedy_10.pth
+/models/best_model_beam_5.pth
+/models/best_model_greedy_5.pth
+/models/best_model_beam_1.pth
+/models/best_model_greedy_1.pth
+/models/best_model_beam_10_100.pth
+/models/best_model_greedy_10_100.pth
+/models/best_model_beam_5_100.pth
+/models/best_model_greedy_5_100.pth
+/models/best_model_beam_1_100.pth
+/models/best_model_greedy_1_100.pth
+/models/best_model_bleu.pth
+/models/best_model_loss.pth
+/models/vocabulary.pkl
+
+
+
