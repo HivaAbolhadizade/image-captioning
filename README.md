@@ -215,18 +215,3 @@ Run the notebooks in order:
 
 ---
 
-## 10. Citation
-
-```
-@project{abolhadizadeh2025imagecaptioning,
-  title={Image Captioning with CNN–RNN Encoder–Decoder Architecture},
-  author={Hiva Abolhadizadeh},
-  year={2025},
-  institution={Shahid Bahonar University of Kerman},
-  note={Special Topics in AI (Deep Learning), Spring 2025}
-}
-```
-
-
-If you want, I can now **design the actual figures** (architecture diagram, training flow, BLEU score bar charts, sample captions) so your GitHub README will look visually like a **research project page**.
-Do you want me to prepare those visuals for you?
